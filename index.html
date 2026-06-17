@@ -103,7 +103,6 @@
         }
         .grid {
             display: grid;
-            grid-template-columns: repeat(8, 1fr);
             gap: 6px;
             flex-grow: 1;
             position: relative;
@@ -118,7 +117,6 @@
         .row-md .cell.active { background: #ff5722; } /* Orange Main Droite */
         .row-mg .cell.active { background: #2196f3; } /* Bleu Main Gauche */
         
-        /* Curseur de défilement vertical ultra-fluide */
         #playhead {
             position: absolute;
             top: 0;
@@ -132,12 +130,12 @@
         }
         .time-labels {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
             margin-left: 40px;
             margin-bottom: 5px;
             text-align: center;
             font-weight: bold;
             color: #888;
+            font-size: 0.85rem;
         }
     </style>
 </head>
@@ -150,6 +148,20 @@
             <div class="control-group">
                 <label for="bpm">BPM :</label>
                 <input type="number" id="bpm" value="60" min="40" max="240">
+            </div>
+
+            <div class="control-group">
+                <label for="stepsSelect">Cases :</label>
+                <select id="stepsSelect">
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="6">6</option>
+                    <option value="8" selected>8</option>
+                    <option value="12">12</option>
+                    <option value="16">16</option>
+                </select>
             </div>
             
             <div class="control-group">
@@ -185,9 +197,7 @@
     </div>
 
     <div class="grid-container">
-        <div class="time-labels">
-            <div>1</div><div>2</div><div>3</div><div>4</div>
-        </div>
+        <div class="time-labels" id="timeLabels"></div>
         
         <div id="playhead"></div>
 
@@ -203,7 +213,7 @@
     </div>
 
     <script>
-        const totalSteps = 8;
+        let totalSteps = 8;
         let isPlaying = false;
         
         let animationFrameId = null;
@@ -213,6 +223,7 @@
         
         const playBtn = document.getElementById('playBtn');
         const bpmInput = document.getElementById('bpm');
+        const stepsSelect = document.getElementById('stepsSelect');
         const soundMDSelect = document.getElementById('soundMD');
         const soundMGSelect = document.getElementById('soundMG');
         const volumeInput = document.getElementById('volume');
@@ -220,54 +231,143 @@
         const playhead = document.getElementById('playhead');
         const gridMD = document.getElementById('gridMD');
         const gridMG = document.getElementById('gridMG');
+        const timeLabels = document.getElementById('timeLabels');
 
+        // Configuration Audio
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        
         const mainGainNode = audioCtx.createGain();
         mainGainNode.connect(audioCtx.destination);
-        mainGainNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
 
+        // --- ENREGISTREMENT ET CHARGEMENT (LOCALSTORAGE) ---
+        function saveSettings() {
+            const activeMD = Array.from(gridMD.children).map(c => c.classList.contains('active'));
+            const activeMG = Array.from(gridMG.children).map(c => c.classList.contains('active'));
+            
+            const settings = {
+                bpm: bpmInput.value,
+                totalSteps: stepsSelect.value,
+                volume: volumeInput.value,
+                soundMD: soundMDSelect.value,
+                soundMG: soundMGSelect.value,
+                gridStateMD: activeMD,
+                gridStateMG: activeMG
+            };
+            localStorage.setItem('aideRythmique_settings', JSON.stringify(settings));
+        }
+
+        function loadSettings() {
+            const saved = localStorage.getItem('aideRythmique_settings');
+            if (!saved) {
+                buildGrid();
+                return;
+            }
+            
+            const settings = JSON.parse(saved);
+            
+            // Appliquer les valeurs aux inputs
+            bpmInput.value = settings.bpm;
+            stepsSelect.value = settings.totalSteps;
+            totalSteps = parseInt(settings.totalSteps);
+            volumeInput.value = settings.volume;
+            volumeVal.innerText = settings.volume + '%';
+            mainGainNode.gain.setValueAtTime(settings.volume / 100, audioCtx.currentTime);
+            soundMDSelect.value = settings.soundMD;
+            soundMGSelect.value = settings.soundMG;
+            
+            // Reconstruire les grilles avec l'état coché
+            buildGrid(settings.gridStateMD, settings.gridStateMG);
+        }
+
+        // --- GÉNÉRATION DYNAMIQUE DE LA GRILLE ---
+        function buildGrid(savedMD = [], savedMG = []) {
+            // Nettoyer l'existant
+            gridMD.innerHTML = '';
+            gridMG.innerHTML = '';
+            timeLabels.innerHTML = '';
+
+            // Appliquer le bon nombre de colonnes CSS
+            gridMD.style.gridTemplateColumns = `repeat(${totalSteps}, 1fr)`;
+            gridMG.style.gridTemplateColumns = `repeat(${totalSteps}, 1fr)`;
+            timeLabels.style.gridTemplateColumns = `repeat(${totalSteps}, 1fr)`;
+
+            // Créer les cases
+            for (let i = 0; i < totalSteps; i++) {
+                // Graduation chiffrée du haut
+                const label = document.createElement('div');
+                label.innerText = i + 1;
+                timeLabels.appendChild(label);
+
+                // Main Droite
+                const cellMD = document.createElement('div');
+                cellMD.className = 'cell';
+                if (savedMD[i]) cellMD.classList.add('active');
+                cellMD.addEventListener('click', () => {
+                    cellMD.classList.toggle('active');
+                    saveSettings();
+                });
+                gridMD.appendChild(cellMD);
+
+                // Main Gauche
+                const cellMG = document.createElement('div');
+                cellMG.className = 'cell';
+                if (savedMG[i]) cellMG.classList.add('active');
+                cellMG.addEventListener('click', () => {
+                    cellMG.classList.toggle('active');
+                    saveSettings();
+                });
+                gridMG.appendChild(cellMG);
+            }
+            
+            resetPlayhead();
+        }
+
+        // --- ÉCOUTEURS DE CHANGEMENTS ---
+        stepsSelect.addEventListener('change', (e) => {
+            if (isPlaying) stop();
+            totalSteps = parseInt(e.target.value);
+            buildGrid();
+            saveSettings();
+        });
+
+        bpmInput.addEventListener('input', saveSettings);
+        soundMDSelect.addEventListener('change', saveSettings);
+        soundMGSelect.addEventListener('change', saveSettings);
+        
         volumeInput.addEventListener('input', (e) => {
             const val = e.target.value;
             volumeVal.innerText = val + '%';
             mainGainNode.gain.setValueAtTime(val / 100, audioCtx.currentTime);
+            saveSettings();
         });
 
+        // --- MOTEUR AUDIO ET ANIMATION ---
         function createBeep(freq, type, duration) {
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
-            
             osc.connect(gain);
             gain.connect(mainGainNode);
-            
             osc.type = type;
             osc.frequency.value = freq;
-            
             gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
-            
             osc.start();
             osc.stop(audioCtx.currentTime + duration);
-        }
-
-        for (let i = 0; i < totalSteps; i++) {
-            const cellMD = document.createElement('div');
-            cellMD.className = 'cell';
-            cellMD.addEventListener('click', () => cellMD.classList.toggle('active'));
-            gridMD.appendChild(cellMD);
-
-            const cellMG = document.createElement('div');
-            cellMG.className = 'cell';
-            cellMG.addEventListener('click', () => cellMG.classList.toggle('active'));
-            gridMG.appendChild(cellMG);
         }
 
         function getTimelineDimensions() {
             const gridRect = gridMD.getBoundingClientRect();
             const containerRect = document.querySelector('.grid-container').getBoundingClientRect();
-            const startX = gridRect.left - containerRect.left;
-            const totalWidth = gridRect.width;
-            return { startX, totalWidth };
+            return { 
+                startX: gridRect.left - containerRect.left, 
+                totalWidth: gridRect.width 
+            };
+        }
+
+        function resetPlayhead() {
+            setTimeout(() => {
+                const dims = getTimelineDimensions();
+                playhead.style.left = `${dims.startX}px`;
+            }, 50);
         }
 
         function updateTimeline(timestamp) {
@@ -283,19 +383,14 @@
             const currentStep = Math.floor(progress * totalSteps);
             
             if (currentStep !== lastTriggeredStep) {
-                const cellsMD = gridMD.children;
-                const cellsMG = gridMG.children;
-
-                const typeMD = soundMDSelect.value;
-                const typeMG = soundMGSelect.value;
-
-                if (cellsMD[currentStep].classList.contains('active')) {
-                    createBeep(880, typeMD, 0.1); 
+                if (gridMD.children[currentStep] && gridMG.children[currentStep]) {
+                    if (gridMD.children[currentStep].classList.contains('active')) {
+                        createBeep(880, soundMDSelect.value, 0.1); 
+                    }
+                    if (gridMG.children[currentStep].classList.contains('active')) {
+                        createBeep(330, soundMGSelect.value, 0.12); 
+                    }
                 }
-                if (cellsMG[currentStep].classList.contains('active')) {
-                    createBeep(330, typeMG, 0.12); 
-                }
-                
                 lastTriggeredStep = currentStep;
             }
             
@@ -310,6 +405,7 @@
             }
 
             const bpm = parseInt(bpmInput.value);
+            // On considère qu'une boucle complète correspond à 4 pulsations de métronome
             durationPerLoop = (60 / bpm) * 4 * 1000; 
             
             startTime = 0;
@@ -326,9 +422,7 @@
             playBtn.innerText = 'PLAY';
             playBtn.style.background = '#00ffcc';
             cancelAnimationFrame(animationFrameId);
-            
-            const dims = getTimelineDimensions();
-            playhead.style.left = `${dims.startX}px`;
+            resetPlayhead();
         }
 
         playBtn.addEventListener('click', () => {
@@ -336,17 +430,10 @@
             else start();
         });
 
-        window.addEventListener('resize', () => {
-            if (!isPlaying) {
-                const dims = getTimelineDimensions();
-                playhead.style.left = `${dims.startX}px`;
-            }
-        });
+        window.addEventListener('resize', resetPlayhead);
 
-        setTimeout(() => {
-            const dims = getTimelineDimensions();
-            playhead.style.left = `${dims.startX}px`;
-        }, 100);
+        // Démarrage : Charger l'historique
+        loadSettings();
     </script>
 </body>
 </html>
