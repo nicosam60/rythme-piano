@@ -148,7 +148,7 @@
 </head>
 <body>
 
-    <h1>Aide Rythmique (15h15)</h1>
+    <h1>Aide Rythmique (15h20)</h1>
 
     <div class="controls">
         <div class="controls-row">
@@ -234,6 +234,9 @@
         
         const scheduleAheadTime = 0.1; 
         const lookahead = 25.0;        
+
+        // Compensation constante pour aligner le moteur d'affichage sur la sortie audio réelle
+        const visualDelayCompensation = 0.012; 
 
         const playBtn = document.getElementById('playBtn');
         const bpmInput = document.getElementById('bpm');
@@ -364,7 +367,8 @@
         function updatePlayheadVisually() {
             if (!isPlaying) return;
 
-            const currentTime = audioCtx.currentTime;
+            // On synchronise le curseur sur le temps réel de l'horloge avec la compensation
+            const currentTime = audioCtx.currentTime - visualDelayCompensation;
             
             while (notesInQueue.length > 1 && notesInQueue[1].time <= currentTime) {
                 notesInQueue.shift();
@@ -431,10 +435,8 @@
             
             const noteDuration = maxDuration * 0.85; 
             
-            // Attaque instantanée à 100% de la puissance au temps exact t (suppression de la rampe linéaire)
             gain.gain.setValueAtTime(0.3, time);
             
-            // Maintien puis coupure franche à la fin
             gain.gain.setValueAtTime(0.3, time + noteDuration - 0.01);
             gain.gain.linearRampToValueAtTime(0.00001, time + noteDuration);
             
