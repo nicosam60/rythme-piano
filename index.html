@@ -223,16 +223,15 @@
         let totalSteps = 8;
         let isPlaying = false;
         
-        // Variables pour le moteur de temps ultra-précis
         let timerId = null;
         let animationFrameId = null;
-        let nextNoteTime = 0.0;     // Moment où la prochaine note doit se déclencher
-        let currentStepInLoop = 0;   // Index de la note lue (0 à totalSteps - 1)
-        let startTimeAudio = 0.0;    // Point de repère de début de boucle pour l'affichage visuel
-        let stepDuration = 0.0;      // Durée exacte en secondes d'une seule case
+        let nextNoteTime = 0.0;     
+        let currentStepInLoop = 0;   
+        let startTimeAudio = 0.0;    
+        let stepDuration = 0.0;      
         
-        const scheduleAheadTime = 0.1; // Fenêtre de planification (100ms à l'avance)
-        const lookahead = 25.0;        // Fréquence de vérification du moteur (toutes les 25ms)
+        const scheduleAheadTime = 0.1; 
+        const lookahead = 25.0;        
 
         const playBtn = document.getElementById('playBtn');
         const bpmInput = document.getElementById('bpm');
@@ -321,22 +320,24 @@
             playhead.style.left = `${dims.startX}px`;
         }
 
-        // --- HORLOGE INTERNE AUDIO ET PLANIFICATION (SCHEDULER) ---
         function scheduleNote(step, time) {
             const cellsMD = gridMD.children;
             const cellsMG = gridMG.children;
 
+            const bpm = parseInt(bpmInput.value);
+            const loopDuration = (60.0 / bpm) * 4;
+            const currentStepDuration = loopDuration / totalSteps;
+
             if (cellsMD[step] && cellsMD[step].classList.contains('active')) {
-                createBeep(880, soundMDSelect.value, 0.1, time);
+                createBeep(880, soundMDSelect.value, currentStepDuration, time);
             }
             if (cellsMG[step] && cellsMG[step].classList.contains('active')) {
-                createBeep(330, soundMGSelect.value, 0.12, time);
+                createBeep(330, soundMGSelect.value, currentStepDuration, time);
             }
         }
 
         function advanceNote() {
             const bpm = parseInt(bpmInput.value);
-            // On conserve la règle de base : 1 boucle complète = 4 temps de métronome
             const loopDuration = (60.0 / bpm) * 4;
             stepDuration = loopDuration / totalSteps;
 
@@ -345,7 +346,7 @@
             currentStepInLoop++;
             if (currentStepInLoop === totalSteps) {
                 currentStepInLoop = 0;
-                startTimeAudio += loopDuration; // Avance le repère de synchronisation visuelle
+                startTimeAudio += loopDuration; 
             }
         }
 
@@ -357,14 +358,12 @@
             timerId = setTimeout(scheduler, lookahead);
         }
 
-        // --- ANIMATION VISUELLE ---
         function updatePlayheadVisually() {
             if (!isPlaying) return;
 
             const totalLoopDuration = (60.0 / parseInt(bpmInput.value)) * 4;
             const currentTimeInLoop = audioCtx.currentTime - startTimeAudio;
             
-            // Calcul du progrès (modulo 1 pour boucler proprement)
             let progress = (currentTimeInLoop % totalLoopDuration) / totalLoopDuration;
             if (progress < 0) progress = 0;
 
@@ -389,7 +388,6 @@
             const loopDuration = (60.0 / bpm) * 4;
             stepDuration = loopDuration / totalSteps;
             
-            // Aligner le départ immédiat
             nextNoteTime = audioCtx.currentTime + 0.05;
             startTimeAudio = audioCtx.currentTime + 0.05;
 
@@ -407,7 +405,7 @@
             resetPlayhead();
         }
 
-        function createBeep(freq, type, duration, time) {
+        function createBeep(freq, type, maxDuration, time) {
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             osc.connect(gain);
@@ -415,14 +413,21 @@
             osc.type = type;
             osc.frequency.value = freq;
             
-            gain.gain.setValueAtTime(0.3, time);
-            gain.gain.exponentialRampToValueAtTime(0.00001, time + duration);
+            // NoteDuration : on laisse un infime silence (15% de la note) avant la suivante pour éviter le chevauchement
+            const noteDuration = maxDuration * 0.85; 
+            
+            // Attaque ultra-courte (5ms) pour éviter le clic et le "trou" sur la première note
+            gain.gain.setValueAtTime(0.0, time);
+            gain.gain.linearRampToValueAtTime(0.3, time + 0.005);
+            
+            // Maintien puis extinction propre
+            gain.gain.setValueAtTime(0.3, time + noteDuration - 0.01);
+            gain.gain.linearRampToValueAtTime(0.00001, time + noteDuration);
             
             osc.start(time);
-            osc.stop(time + duration);
+            osc.stop(time + noteDuration);
         }
 
-        // --- ÉCOUTEURS ---
         playBtn.addEventListener('click', () => {
             if (isPlaying) stop();
             else start();
