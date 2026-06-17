@@ -148,7 +148,7 @@
 </head>
 <body>
 
-    <h1>Aide Rythmique (15h31)</h1>
+    <h1>Aide Rythmique (16h42)</h1>
 
     <div class="controls">
         <div class="controls-row">
@@ -184,20 +184,20 @@
             <div class="control-group">
                 <label for="soundMD">Son MD :</label>
                 <select id="soundMD">
-                    <option value="sine" selected>Bip Pur (Aigu)</option>
-                    <option value="triangle">Claquement doux</option>
-                    <option value="square">Arcade / Rétro</option>
-                    <option value="sawtooth">Dents de scie</option>
+                    <option value="piano" selected>🎹 Piano Électrique (Aigu)</option>
+                    <option value="bell">🔔 Clochette / Boîte à Musique</option>
+                    <option value="clap">🪵 Clap Percussion</option>
+                    <option value="bass">🎸 Basse Ronde</option>
                 </select>
             </div>
 
             <div class="control-group">
                 <label for="soundMG">Son MG :</label>
                 <select id="soundMG">
-                    <option value="sine">Bip Pur (Grave)</option>
-                    <option value="triangle" selected>Claquement (Percu)</option>
-                    <option value="square">Arcade / Rétro</option>
-                    <option value="sawtooth">Dents de scie</option>
+                    <option value="piano">🎹 Piano Électrique (Grave)</option>
+                    <option value="bell">🔔 Clochette / Boîte à Musique</option>
+                    <option value="clap" selected>🪵 Clap Percussion</option>
+                    <option value="bass">🎸 Basse Ronde</option>
                 </select>
             </div>
         </div>
@@ -332,11 +332,19 @@
             const loopDuration = (60.0 / bpm) * 4;
             const currentStepDuration = loopDuration / totalSteps;
 
-            if (cellsMD[step] && cellsMD[step].classList.contains('active')) {
-                createBeep(880, soundMDSelect.value, currentStepDuration, time);
+            const mdActive = cellsMD[step] && cellsMD[step].classList.contains('active');
+            const mgActive = cellsMG[step] && cellsMG[step].classList.contains('active');
+
+            // Si les deux mains jouent ensemble, on équilibre légèrement le volume pour éviter la saturation
+            const targetGain = (mdActive && mgActive) ? 0.22 : 0.3;
+
+            if (mdActive) {
+                // Main Droite : Fréquences plus hautes (ex: Ré 5 = 587Hz)
+                triggerCustomSound(soundMDSelect.value, 587.33, currentStepDuration, time, targetGain);
             }
-            if (cellsMG[step] && cellsMG[step].classList.contains('active')) {
-                createBeep(330, soundMGSelect.value, currentStepDuration, time);
+            if (mgActive) {
+                // Main Gauche : Fréquences plus basses (ex: Sol 3 = 196Hz)
+                triggerCustomSound(soundMGSelect.value, 196.00, currentStepDuration, time, targetGain);
             }
         }
 
@@ -422,23 +430,78 @@
             resetPlayhead();
         }
 
-        function createBeep(freq, type, maxDuration, time) {
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.connect(gain);
-            gain.connect(mainGainNode);
-            osc.type = type;
-            osc.frequency.value = freq;
+        function triggerCustomSound(instrument, baseFreq, maxDuration, time, volumeCoeff) {
+            const gainNode = audioCtx.createGain();
+            gainNode.connect(mainGainNode);
             
-            const noteDuration = maxDuration * 0.85; 
-            
-            gain.gain.setValueAtTime(0.3, time);
-            
-            gain.gain.setValueAtTime(0.3, time + noteDuration - 0.005);
-            gain.gain.linearRampToValueAtTime(0.00001, time + noteDuration);
-            
-            osc.start(time);
-            osc.stop(time + noteDuration);
+            let noteDuration = maxDuration * 0.85;
+
+            if (instrument === 'piano') {
+                // Synthèse type Piano Électrique doux : Sine + Triangle harmonique léger
+                const osc1 = audioCtx.createOscillator();
+                const osc2 = audioCtx.createOscillator();
+                const subGain = audioCtx.createGain();
+                
+                osc1.type = 'sine';
+                osc1.frequency.value = baseFreq;
+                
+                osc2.type = 'triangle';
+                osc2.frequency.value = baseFreq * 2; // Harmonique supérieure
+                
+                osc1.connect(gainNode);
+                osc2.connect(subGain);
+                subGain.connect(gainNode);
+                subGain.gain.setValueAtTime(0.15, time); // Harmonique en retrait
+                
+                gainNode.gain.setValueAtTime(volumeCoeff, time);
+                gainNode.gain.setValueAtTime(volumeCoeff, time + noteDuration * 0.3);
+                gainNode.gain.exponentialRampToValueAtTime(0.00001, time + noteDuration);
+                
+                osc1.start(time);
+                osc2.start(time);
+                osc1.stop(time + noteDuration);
+                osc2.stop(time + noteDuration);
+
+            } else if (instrument === 'bell') {
+                // Boîte à musique / Clochette : Fréquence doublée, son très pur et cristallin
+                const osc = audioCtx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.value = baseFreq * 1.5;
+                osc.connect(gainNode);
+                
+                gainNode.gain.setValueAtTime(volumeCoeff * 1.2, time);
+                gainNode.gain.exponentialRampToValueAtTime(0.00001, time + noteDuration * 1.2);
+                
+                osc.start(time);
+                osc.stop(time + noteDuration * 1.2);
+
+            } else if (instrument === 'clap') {
+                // Clap Percussion mat : Bruit blanc simulé par une onde triangle descendante ultra rapide
+                const osc = audioCtx.createOscillator();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(160, time);
+                osc.frequency.exponentialRampToValueAtTime(40, time + 0.04);
+                osc.connect(gainNode);
+                
+                gainNode.gain.setValueAtTime(volumeCoeff * 1.4, time);
+                gainNode.gain.exponentialRampToValueAtTime(0.00001, time + 0.05); // Tranchant et très court
+                
+                osc.start(time);
+                osc.stop(time + 0.06);
+
+            } else if (instrument === 'bass') {
+                // Basse sourde et ronde
+                const osc = audioCtx.createOscillator();
+                osc.type = 'triangle';
+                osc.frequency.value = baseFreq * 0.5; // Octave inférieure
+                osc.connect(gainNode);
+                
+                gainNode.gain.setValueAtTime(volumeCoeff * 1.1, time);
+                gainNode.gain.linearRampToValueAtTime(0.00001, time + noteDuration);
+                
+                osc.start(time);
+                osc.stop(time + noteDuration);
+            }
         }
 
         playBtn.addEventListener('click', () => {
