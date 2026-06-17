@@ -129,7 +129,6 @@
             pointer-events: none;
             left: 40px;
             z-index: 10;
-            transform: translateX(-2px); /* Centre parfaitement la ligne sur le repère */
         }
         .time-labels {
             display: grid;
@@ -226,9 +225,12 @@
         
         let timerId = null;
         let animationFrameId = null;
+        
+        // Structure de données pour l'historique des notes jouées (permet une synchronisation parfaite de l'affichage)
+        let notesInQueue = [];
+        
         let nextNoteTime = 0.0;     
         let currentStepInLoop = 0;   
-        let startTimeAudio = 0.0;    
         let stepDuration = 0.0;      
         
         const scheduleAheadTime = 0.1; 
@@ -304,17 +306,17 @@
         function getTimelineDimensions() {
             const firstCell = gridMD.children[0];
             const lastCell = gridMD.children[gridMD.children.length - 1];
-            if (!firstCell || !lastCell) return { startX: 40, totalWidth: 0 };
+            if (!firstCell || !lastCell) return { startX: 40, totalWidth: 0, cellWidth: 0 };
 
             const containerRect = document.querySelector('.grid-container').getBoundingClientRect();
             const firstRect = firstCell.getBoundingClientRect();
             const lastRect = lastCell.getBoundingClientRect();
 
-            // Correction ici : On prend tout le bloc du premier au dernier pixel extérieur droit
             const startX = firstRect.left - containerRect.left;
             const totalWidth = lastRect.right - firstRect.left;
+            const cellWidth = firstRect.width;
 
-            return { startX, totalWidth };
+            return { startX, totalWidth, cellWidth };
         }
 
         function resetPlayhead() {
@@ -323,6 +325,9 @@
         }
 
         function scheduleNote(step, time) {
+            // Ajouter la note à la file d'attente d'affichage visuel
+            notesInQueue.push({ step: step, time: time });
+
             const cellsMD = gridMD.children;
             const cellsMG = gridMG.children;
 
@@ -348,7 +353,6 @@
             currentStepInLoop++;
             if (currentStepInLoop === totalSteps) {
                 currentStepInLoop = 0;
-                startTimeAudio += loopDuration; 
             }
         }
 
@@ -363,15 +367,36 @@
         function updatePlayheadVisually() {
             if (!isPlaying) return;
 
-            const totalLoopDuration = (60.0 / parseInt(bpmInput.value)) * 4;
-            const currentTimeInLoop = audioCtx.currentTime - startTimeAudio;
+            const currentTime = audioCtx.currentTime;
             
-            let progress = (currentTimeInLoop % totalLoopDuration) / totalLoopDuration;
-            if (progress < 0) progress = 0;
+            // On nettoie les notes obsolètes de la file d'attente tout en conservant la note courante
+            while (notesInQueue.length > 0 && notesInQueue[0].time < currentTime) {
+                // Si c'est la seule note restante ou si la suivante est dans le futur, on s'arrête
+                if (notesInQueue.length === 1 || notesInQueue[1].time > currentTime) {
+                    break;
+                }
+                notesInQueue.shift();
+            }
 
-            const dims = getTimelineDimensions();
-            const currentX = dims.startX + (progress * dims.totalWidth);
-            playhead.style.left = `${currentX}px`;
+            if (notesInQueue.length > 0) {
+                const currentNote = notesInQueue[0];
+                const noteStartTime = currentNote.time;
+                const step = currentNote.step;
+                
+                // Calcul précis de la progression à l'intérieur de la case actuelle (entre 0 et 1)
+                const elapsedInStep = currentTime - noteStartTime;
+                const progressInStep = Math.min(Math.max(elapsedInStep / stepDuration, 0), 1);
+
+                const dims = getTimelineDimensions();
+                
+                // Position physique exacte du début de la case courante
+                const stepStartX = dims.startX + (step * (dims.totalWidth / totalSteps));
+                
+                // Avancement linéaire strict de la ligne blanche à l'intérieur de cette case
+                const currentX = stepStartX + (progressInStep * (dims.totalWidth / totalSteps));
+                
+                playhead.style.left = `${currentX}px`;
+            }
 
             animationFrameId = requestAnimationFrame(updatePlayheadVisually);
         }
@@ -386,12 +411,12 @@
             playBtn.style.background = '#ff5722';
 
             currentStepInLoop = 0;
+            notesInQueue = [];
             const bpm = parseInt(bpmInput.value);
             const loopDuration = (60.0 / bpm) * 4;
             stepDuration = loopDuration / totalSteps;
             
-            nextNoteTime = audioCtx.currentTime + 0.05;
-            startTimeAudio = audioCtx.currentTime + 0.05;
+            nextNoteTime = audioCtx.currentTime + 0.02;
 
             scheduler();
             animationFrameId = requestAnimationFrame(updatePlayheadVisually);
