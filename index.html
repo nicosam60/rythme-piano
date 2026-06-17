@@ -66,17 +66,24 @@
             color: #00ffcc;
             min-width: 28px;
         }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+        }
         button {
-            background: #00ffcc;
             color: #1a1a1a;
             border: none;
-            padding: 8px 25px;
+            padding: 8px 20px;
             font-weight: bold;
             border-radius: 4px;
             cursor: pointer;
             font-size: 1rem;
         }
-        button:hover { background: #00ccaa; }
+        #playBtn { background: #00ffcc; }
+        #playBtn:hover { background: #00ccaa; }
+        #clearBtn { background: #ffb300; }
+        #clearBtn:hover { background: #e69d00; }
+        
         .grid-container {
             position: relative;
             background: #222;
@@ -138,7 +145,8 @@
             text-align: center;
             font-weight: bold;
             color: #888;
-            font-size: 0.85rem;
+            font-size: 0.95rem;
+            height: 20px;
         }
         .time-labels div {
             width: 100%;
@@ -148,7 +156,7 @@
 </head>
 <body>
 
-    <h1>Aide Rythmique (17h18)</h1>
+    <h1>Aide Rythmique</h1>
 
     <div class="controls">
         <div class="controls-row">
@@ -177,7 +185,10 @@
                 <span class="volume-val" id="volumeVal">50%</span>
             </div>
 
-            <button id="playBtn">PLAY</button>
+            <div class="btn-group">
+                <button id="playBtn">PLAY</button>
+                <button id="clearBtn">VIDER</button>
+            </div>
         </div>
 
         <div class="controls-row">
@@ -232,13 +243,10 @@
         let currentStepInLoop = 0;   
         let stepDuration = 0.0;      
         
-        // Variable pour stocker le verrou de veille de l'écran
         let wakeLock = null;
 
-        const scheduleAheadTime = 0.1; 
-        const lookahead = 25.0;        
-
         const playBtn = document.getElementById('playBtn');
+        const clearBtn = document.getElementById('clearBtn');
         const bpmInput = document.getElementById('bpm');
         const stepsSelect = document.getElementById('stepsSelect');
         const soundMDSelect = document.getElementById('soundMD');
@@ -254,7 +262,6 @@
         const mainGainNode = audioCtx.createGain();
         mainGainNode.connect(audioCtx.destination);
 
-        // Fonctions de gestion de la veille de l'écran (Wake Lock)
         async function requestWakeLock() {
             if ('wakeLock' in navigator) {
                 try {
@@ -297,9 +304,21 @@
             gridMG.style.gridTemplateColumns = `repeat(${totalSteps}, 1fr)`;
             timeLabels.style.gridTemplateColumns = `repeat(${totalSteps}, 1fr)`;
 
+            let labelStep = 1;
+            if (totalSteps === 8) labelStep = 2;       
+            if (totalSteps === 16) labelStep = 4;      
+            if (totalSteps === 12) labelStep = 3;      
+            if (totalSteps === 6) labelStep = 3;       
+
             for (let i = 0; i < totalSteps; i++) {
                 const label = document.createElement('div');
-                label.innerText = i + 1;
+                
+                if (i % labelStep === 0) {
+                    label.innerText = (i / labelStep) + 1;
+                    label.style.color = '#00ffcc'; 
+                } else {
+                    label.innerText = ''; 
+                }
                 timeLabels.appendChild(label);
 
                 const cellMD = document.createElement('div');
@@ -384,7 +403,7 @@
                 scheduleNote(currentStepInLoop, nextNoteTime);
                 advanceNote();
             }
-            timerId = setTimeout(scheduler, lookahead);
+            timerId = setTimeout(scheduler, 25.0);
         }
 
         function updatePlayheadVisually() {
@@ -425,7 +444,6 @@
             playBtn.innerText = 'STOP';
             playBtn.style.background = '#ff5722';
 
-            // On demande le blocage de la mise en veille de l'écran
             requestWakeLock();
 
             currentStepInLoop = 0;
@@ -446,7 +464,6 @@
             playBtn.innerText = 'PLAY';
             playBtn.style.background = '#00ffcc';
             
-            // On autorise à nouveau l'écran à se mettre en veille
             releaseWakeLock();
 
             clearTimeout(timerId);
@@ -529,6 +546,15 @@
             else start();
         });
 
+        // Événement du bouton VIDER
+        clearBtn.addEventListener('click', () => {
+            if (isPlaying) stop();
+            // On reconstruit la grille à vide
+            buildGrid();
+            // On sauvegarde l'état vide dans le stockage local
+            saveSettings();
+        });
+
         stepsSelect.addEventListener('change', (e) => {
             if (isPlaying) stop();
             totalSteps = parseInt(e.target.value);
@@ -566,7 +592,6 @@
             buildGrid(settings.gridStateMD, settings.gridStateMG);
         }
 
-        // Si l'utilisateur quitte l'onglet et revient, on réactive le verrou s'il jouait toujours
         document.addEventListener('visibilitychange', () => {
             if (wakeLock !== null && document.visibilityState === 'visible' && isPlaying) {
                 requestWakeLock();
