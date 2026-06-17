@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mon Entraîneur Rythmique Piano</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+        h1 { font-size: 1.4rem; margin-bottom: 10px; color: #00ffcc; }
+        .controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 20px;
+            background: #2a2a2a;
+            padding: 10px 20px;
+            border-radius: 8px;
+        }
+        label { font-weight: bold; }
+        input[type="number"] {
+            width: 60px;
+            background: #333;
+            color: #fff;
+            border: 1px solid #555;
+            padding: 5px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        button {
+            background: #00ffcc;
+            color: #1a1a1a;
+            border: none;
+            padding: 8px 16px;
+            font-weight: bold;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+        button:hover { background: #00ccaa; }
+        .grid-container {
+            position: relative;
+            background: #222;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            width: 100%;
+            max-width: 600px;
+            overflow: hidden;
+        }
+        .row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            position: relative;
+        }
+        .row-label {
+            width: 40px;
+            font-weight: bold;
+            font-size: 0.9rem;
+            z-index: 11;
+            background: #222;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 6px;
+            flex-grow: 1;
+            position: relative;
+        }
+        .cell {
+            aspect-ratio: 1;
+            background: #3a3a3a;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+        .row-md .cell.active { background: #ff5722; } /* Orange Main Droite */
+        .row-mg .cell.active { background: #2196f3; } /* Bleu Main Gauche */
+        
+        /* Curseur de défilement vertical ultra-fluide */
+        #playhead {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: #ffffff;
+            box-shadow: 0 0 10px #ffffff;
+            pointer-events: none;
+            left: 40px;
+            z-index: 10;
+        }
+        .time-labels {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            margin-left: 40px;
+            margin-bottom: 5px;
+            text-align: center;
+            font-weight: bold;
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Mon Entraîneur Rythmique Piano</h1>
+
+    <div class="controls">
+        <label for="bpm">BPM :</label>
+        <input type="number" id="bpm" value="60" min="40" max="240">
+        <button id="playBtn">PLAY</button>
+    </div>
+
+    <div class="grid-container">
+        <div class="time-labels">
+            <div>1</div><div>2</div><div>3</div><div>4</div>
+        </div>
+        
+        <div id="playhead"></div>
+
+        <!-- Main Droite -->
+        <div class="row row-md">
+            <div class="row-label">MD</div>
+            <div class="grid" id="gridMD"></div>
+        </div>
+
+        <!-- Main Gauche -->
+        <div class="row row-mg">
+            <div class="row-label">MG</div>
+            <div class="grid" id="gridMG"></div>
+        </div>
+    </div>
+
+    <script>
+        const totalSteps = 8;
+        let isPlaying = false;
+        
+        // Variables d'animation et de temps
+        let animationFrameId = null;
+        let startTime = 0;
+        let durationPerLoop = 0; // Durée totale d'une boucle de 8 cases en ms
+        let lastTriggeredStep = -1;
+        
+        const playBtn = document.getElementById('playBtn');
+        const bpmInput = document.getElementById('bpm');
+        const playhead = document.getElementById('playhead');
+        const gridMD = document.getElementById('gridMD');
+        const gridMG = document.getElementById('gridMG');
+
+        // Initialisation de l'Audio Context pour des sons propres
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function createBeep(freq, duration) {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.frequency.value = freq;
+            gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        // Génération des 8 cases
+        for (let i = 0; i < totalSteps; i++) {
+            const cellMD = document.createElement('div');
+            cellMD.className = 'cell';
+            cellMD.addEventListener('click', () => cellMD.classList.toggle('active'));
+            gridMD.appendChild(cellMD);
+
+            const cellMG = document.createElement('div');
+            cellMG.className = 'cell';
+            cellMG.addEventListener('click', () => cellMG.classList.toggle('active'));
+            gridMG.appendChild(cellMG);
+        }
+
+        // Calcule les dimensions physiques réelles de la grille pour le trait
+        function getTimelineDimensions() {
+            const gridRect = gridMD.getBoundingClientRect();
+            const containerRect = document.querySelector('.grid-container').getBoundingClientRect();
+            
+            // Le point de départ (gauche de la première case) et la largeur totale de la grille de cases
+            const startX = gridRect.left - containerRect.left;
+            const totalWidth = gridRect.width;
+            
+            return { startX, totalWidth };
+        }
+
+        // Boucle d'animation principale (tourne à 60 ou 120 images par seconde selon le téléphone)
+        function updateTimeline(timestamp) {
+            if (!startTime) startTime = timestamp;
+            
+            // Temps écoulé dans la boucle actuelle (en millisecondes)
+            const elapsed = (timestamp - startTime) % durationPerLoop;
+            
+            // Progression globale de 0 à 1 dans la mesure
+            const progress = elapsed / durationPerLoop;
+            
+            // Calcul de la position physique du trait
+            const dims = getTimelineDimensions();
+            const currentX = dims.startX + (progress * dims.totalWidth);
+            playhead.style.left = `${currentX}px`;
+            
+            // Déterminer sur quelle case virtuelle se trouve le curseur (0 à 7)
+            const currentStep = Math.floor(progress * totalSteps);
+            
+            // Si on change de case, on regarde s'il faut déclencher un son
+            if (currentStep !== lastTriggeredStep) {
+                const cellsMD = gridMD.children;
+                const cellsMG = gridMG.children;
+
+                if (cellsMD[currentStep].classList.contains('active')) {
+                    createBeep(880, 0.08); // Bip aigu MD
+                }
+                if (cellsMG[currentStep].classList.contains('active')) {
+                    createBeep(440, 0.08); // Bip grave MG
+                }
+                
+                lastTriggeredStep = currentStep;
+            }
+            
+            // Relancer l'image suivante
+            if (isPlaying) {
+                animationFrameId = requestAnimationFrame(updateTimeline);
+            }
+        }
+
+        function start() {
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+
+            const bpm = parseInt(bpmInput.value);
+            // 4 temps par mesure, chaque temps = 60 / bpm secondes. 
+            // Donc la durée totale d'une boucle de 4 temps (8 cases) en ms est :
+            durationPerLoop = (60 / bpm) * 4 * 1000; 
+            
+            startTime = 0;
+            lastTriggeredStep = -1;
+            isPlaying = true;
+            playBtn.innerText = 'STOP';
+            playBtn.style.background = '#ff5722';
+            
+            animationFrameId = requestAnimationFrame(updateTimeline);
+        }
+
+        function stop() {
+            isPlaying = false;
+            playBtn.innerText = 'PLAY';
+            playBtn.style.background = '#00ffcc';
+            cancelAnimationFrame(animationFrameId);
+            
+            // Repositionner proprement au début
+            const dims = getTimelineDimensions();
+            playhead.style.left = `${dims.startX}px`;
+        }
+
+        playBtn.addEventListener('click', () => {
+            if (isPlaying) stop();
+            else start();
+        });
+
+        // Repositionner le curseur correctement si on tourne le téléphone
+        window.addEventListener('resize', () => {
+            if (!isPlaying) {
+                const dims = getTimelineDimensions();
+                playhead.style.left = `${dims.startX}px`;
+            }
+        });
+
+        // Premier positionnement au chargement
+        setTimeout(() => {
+            const dims = getTimelineDimensions();
+            playhead.style.left = `${dims.startX}px`;
+        }, 100);
+    </script>
+</body>
+</html>
