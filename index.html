@@ -156,7 +156,7 @@
 </head>
 <body>
 
-    <h1>Aide Rythmique</h1>
+    <h1>Aide Rythmique (11h26)</h1>
 
     <div class="controls">
         <div class="controls-row">
@@ -244,6 +244,9 @@
         let stepDuration = 0.0;      
         
         let wakeLock = null;
+
+        const scheduleAheadTime = 0.1; 
+        const lookahead = 25.0;        
 
         const playBtn = document.getElementById('playBtn');
         const clearBtn = document.getElementById('clearBtn');
@@ -403,7 +406,7 @@
                 scheduleNote(currentStepInLoop, nextNoteTime);
                 advanceNote();
             }
-            timerId = setTimeout(scheduler, 25.0);
+            timerId = setTimeout(scheduler, lookahead);
         }
 
         function updatePlayheadVisually() {
@@ -546,12 +549,9 @@
             else start();
         });
 
-        // Événement du bouton VIDER
         clearBtn.addEventListener('click', () => {
             if (isPlaying) stop();
-            // On reconstruit la grille à vide
             buildGrid();
-            // On sauvegarde l'état vide dans le stockage local
             saveSettings();
         });
 
